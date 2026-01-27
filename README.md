@@ -9,6 +9,8 @@ This repo contains a small, configurable pipeline to scrape posts from Moneycont
 - Writes post-level data to CSV and aggregate sentiment per thread to JSON.
 
 ## Quickstart
+**Note:** If you're using PowerShell on Windows, replace backslashes `\` with backticks `` ` `` for line continuation, or run commands on a single line.
+
 ```bash
 # 1) Install dependencies (ideally inside a venv)
 python3 -m pip install -r requirements.txt
@@ -23,9 +25,50 @@ python3 -m moneycontrol_pipeline.pipeline \
   --summary-out data/summary.json
 ```
 
-Use `--urls-file urls.txt` to pass many threads (one URL per line, `#` for comments).
+## URL Input Options
+You can provide URLs in multiple ways:
 
-Backends:
+### Single URL
+```bash
+python3 -m moneycontrol_pipeline.pipeline \
+  --urls https://mmb.moneycontrol.com/forum-topics/stocks/reliance-322.html \
+  --backend selenium --headless \
+  --posts-out data/posts.csv \
+  --summary-out data/summary.json
+```
+
+
+### Multiple URLs from CSV file
+Use `--urls-csv` to read URLs from a CSV file (e.g., `final.csv`):
+
+**Bash/Unix:**
+```bash
+python3 -m moneycontrol_pipeline.pipeline \
+  --urls-csv data/final.csv \
+  --csv-column forum_topics_url \
+  --backend selenium --headless \
+  --posts-out data/posts.csv \
+  --summary-out data/summary.json
+```
+
+**PowerShell:**
+```powershell
+python3 -m moneycontrol_pipeline.pipeline `
+  --urls-csv data/final.csv `
+  --csv-column forum_topics_url `
+  --backend selenium --headless `
+  --posts-out data/posts.csv `
+  --summary-out data/summary.json
+```
+
+Or as a single line in PowerShell:
+```powershell
+python3 -m moneycontrol_pipeline.pipeline --urls-csv data/final.csv --csv-column forum_topics_url --backend selenium --headless --posts-out data/posts.csv --summary-out data/summary.json
+```
+
+The `--csv-column` defaults to `forum_topics_url` which matches the structure of `final.csv`. You can specify a different column name if needed.
+
+## Backends:
 - `--backend selenium` when the forum content is rendered client-side. Headless Chrome via `--headless`; adjust scroll bounds with `--scroll-max`, `--scroll-limit`, `--scroll-pause`.
 - `--backend api` to hit the Moneycontrol `mcapi/v2/mmb/get-messages` endpoint directly. This is fastest/most complete for historical data. Example for full history (beware of size: hundreds of thousands of posts):
   ```bash

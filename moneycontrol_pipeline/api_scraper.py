@@ -21,6 +21,7 @@ class ApiMoneycontrolScraper:
         self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "Mozilla/5.0"})
+        self.session.verify = False  # Skip SSL verification
 
     def fetch_posts(self, start_url: str) -> List[Post]:
         section_id = parse_section_id(start_url)

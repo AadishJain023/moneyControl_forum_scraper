@@ -43,18 +43,33 @@ def run_pipeline(
     analyzer = SentimentAnalyzer()
 
     all_posts: List[Dict[str, object]] = []
+    failed_urls: List[str] = []
     try:
         if backend == "api":
-            for url in urls:
-                posts = scraper.fetch_posts(url)
-                _append_posts(all_posts, posts, analyzer)
-        else:
-            for url in urls:
-                for page in scraper.fetch_pages(url):
-                    posts = scraper.parse_posts(
-                        html=page["html"], page_url=page["page_url"], source_url=page["source_url"]
-                    )
+            for idx, url in enumerate(urls, 1):
+                print(f"[{idx}/{len(urls)}] Processing: {url}")
+                try:
+                    posts = scraper.fetch_posts(url)
                     _append_posts(all_posts, posts, analyzer)
+                    print(f"  ✓ Found {len(posts)} posts")
+                except Exception as e:
+                    print(f"  ✗ Error: {str(e)[:100]}")
+                    failed_urls.append(url)
+        else:
+            for idx, url in enumerate(urls, 1):
+                print(f"[{idx}/{len(urls)}] Processing: {url}")
+                try:
+                    page_count = 0
+                    for page in scraper.fetch_pages(url):
+                        page_count += 1
+                        posts = scraper.parse_posts(
+                            html=page["html"], page_url=page["page_url"], source_url=page["source_url"]
+                        )
+                        _append_posts(all_posts, posts, analyzer)
+                    print(f"  ✓ Scraped {page_count} pages, total posts so far: {len(all_posts)}")
+                except Exception as e:
+                    print(f"  ✗ Error: {str(e)[:100]}")
+                    failed_urls.append(url)
     finally:
         if hasattr(scraper, "close"):
             try:
@@ -69,7 +84,7 @@ def run_pipeline(
     if summary_out:
         write_json(summary_out, summary)
 
-    return {"posts": all_posts, "summary": summary}
+    return {"posts": all_posts, "summary": summary, "failed_urls": failed_urls}
 
 
 def aggregate(posts: List[Dict[str, object]]) -> List[Dict[str, object]]:
@@ -142,7 +157,7 @@ def write_json(path: str, data: object) -> None:
     path_obj.write_text(json.dumps(data, indent=2))
 
 
-def load_urls(url_args: Sequence[str], urls_file: Optional[str]) -> List[str]:
+def load_urls(url_args: Sequence[str], urls_file: Optional[str], urls_csv: Optional[str] = None, csv_column: str = "forum_topics_url") -> List[str]:
     urls: List[str] = list(url_args)
     if urls_file:
         file_urls = [
@@ -151,6 +166,22 @@ def load_urls(url_args: Sequence[str], urls_file: Optional[str]) -> List[str]:
             if line.strip() and not line.strip().startswith("#")
         ]
         urls.extend(file_urls)
+        print(f"[INFO] Loaded {len(file_urls)} URLs from {urls_file}")
+    if urls_csv:
+        csv_urls = []
+        try:
+            with open(urls_csv, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                if reader.fieldnames and csv_column not in reader.fieldnames:
+                    raise ValueError(f"Column '{csv_column}' not found in CSV. Available columns: {reader.fieldnames}")
+                for row in reader:
+                    url = row.get(csv_column, "").strip()
+                    if url and not url.startswith("#"):
+                        csv_urls.append(url)
+        except Exception as e:
+            raise ValueError(f"Error reading URLs from CSV '{urls_csv}': {e}")
+        urls.extend(csv_urls)
+        print(f"[INFO] Loaded {len(csv_urls)} URLs from CSV {urls_csv}")
     return urls
 
 
@@ -165,6 +196,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument(
         "--urls-file",
         help="Optional newline-delimited file containing thread URLs",
+    )
+    parser.add_argument(
+        "--urls-csv",
+        help="Optional CSV file containing thread URLs (e.g., final.csv)",
+    )
+    parser.add_argument(
+        "--csv-column",
+        default="forum_topics_url",
+        help="Column name in CSV file containing URLs (default: 'forum_topics_url')",
     )
     parser.add_argument("--max-pages", type=int, default=3, help="Maximum pages per thread")
     parser.add_argument("--sleep", type=float, default=1.2, help="Seconds to sleep between pages")
@@ -217,10 +257,20 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="For api backend: cap on total messages to fetch (0 = no cap).",
     )
     args = parser.parse_args(argv)
+    
+    # Debug: Print what we received
+    print(f"[DEBUG] args.urls_csv = {args.urls_csv}")
+    print(f"[DEBUG] args.csv_column = {args.csv_column}")
 
-    urls = load_urls(args.urls, args.urls_file)
+    urls = load_urls(args.urls, args.urls_file, args.urls_csv, args.csv_column)
     if not urls:
-        raise SystemExit("Provide at least one thread URL via --urls or --urls-file.")
+        raise SystemExit("Provide at least one thread URL via --urls, --urls-file, or --urls-csv.")
+    
+    print(f"[INFO] Total URLs to process: {len(urls)}")
+    for i, url in enumerate(urls[:5], 1):  # Show first 5 URLs
+        print(f"  {i}. {url}")
+    if len(urls) > 5:
+        print(f"  ... and {len(urls) - 5} more URLs")
 
     result = run_pipeline(
         urls=urls,
@@ -241,6 +291,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         f"Scraped {len(result['posts'])} posts across {len(urls)} threads. "
         f"Summary written to {args.summary_out}, posts to {args.posts_out}."
     )
+    if result['failed_urls']:
+        print(f"[WARNING] Failed to process {len(result['failed_urls'])} URLs. Check logs above for details.")
 
 
 if __name__ == "__main__":
