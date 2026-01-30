@@ -3,6 +3,11 @@ import re
 from typing import Dict, Optional, Union
 
 
+
+# use https://huggingface.co/Vansh180/FinBERT-India-v1
+#       https://huggingface.co/kdave/FineTuned_Finbert    
+#(more for indian contexts)
+#code mixed language models can be used too
 class SentimentAnalyzer:
     """
     Run sentiment scoring with VADER when available and fall back to a small
